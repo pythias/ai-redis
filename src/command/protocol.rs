@@ -1,3 +1,5 @@
+use crate::command::response::Response;
+
 pub struct Protocol {
     result: Vec<String>, // 添加一个字段来存储解析的结果
 }
@@ -86,8 +88,10 @@ impl Protocol {
         println!("Handling command: {:?}", self.result);
 
         match self.result.first() {
-            Some(command) if command == "PING" => Ok("+PONG\r\n".to_string()),
-            _ => Err("Unknown command".to_string()),
+            Some(command) if command.to_uppercase() == "PING" => {
+                Ok(Response::SimpleString("PONG".to_string()).to_string())
+            }
+            _ => Err(Response::Error("Unknown command".to_string()).to_string()),
         }
     }
 }
