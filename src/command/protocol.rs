@@ -86,10 +86,29 @@ impl Protocol {
 
     pub fn handle_command(&self) -> Result<String, String> {
         println!("Handling command: {:?}", self.result);
-
+    
         match self.result.first() {
             Some(command) if command.to_uppercase() == "PING" => {
                 Ok(Response::SimpleString("PONG".to_string()).to_string())
+            }
+            Some(command) if command.to_uppercase() == "CONFIG" => {
+                if self.result.len() >= 3 && self.result[1].to_uppercase() == "GET" {
+                    match self.result[2].as_str() {
+                        "save" => Ok(Response::Array(vec![
+                            Response::BulkString(Some("save".to_string().into_bytes())),
+                            Response::BulkString(Some("".to_string().into_bytes())),
+                        ]).to_string()),
+                        "appendonly" => Ok(Response::BulkString(Some("no".to_string().into_bytes())).to_string()),
+                        "appendfsync" => Ok(Response::BulkString(Some("everysec".to_string().into_bytes())).to_string()),
+                        _ => Err(Response::Error("Unknown config option".to_string()).to_string()),
+                    }
+                } else {
+                    Ok(Response::Array(vec![
+                        Response::BulkString(Some("dbfilename".to_string().into_bytes())),
+                        Response::BulkString(Some("dump.rdb".to_string().into_bytes())),
+                        // Add more configuration options here
+                    ]).to_string())
+                }
             }
             _ => Err(Response::Error("Unknown command".to_string()).to_string()),
         }

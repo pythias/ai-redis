@@ -5,6 +5,7 @@ mod store;
 use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
+use std::thread;
 
 use crate::command::protocol::Protocol;
 
@@ -14,20 +15,32 @@ fn main() {
     for stream in listener.incoming() {
         let stream = stream.unwrap();
 
-        let _ = handle_connection(stream);
+        thread::spawn(|| {
+            let _ = handle_connection(stream);
+        });
     }
 }
 
 fn handle_connection(mut stream: TcpStream) -> Result<(), String> {
     let mut buffer = [0; 512];
-    stream.read(&mut buffer).unwrap();
 
-    let mut protocol = Protocol::new();
-    protocol.parse(&buffer)?;
-    let response = protocol.handle_command()?;
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => {
+                // Connection was closed
+                return Ok(());
+            }
+            Ok(_) => {
+                let mut protocol = Protocol::new();
+                protocol.parse(&buffer)?;
+                let response = protocol.handle_command()?;
 
-    stream.write(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
-
-    Ok(())
+                stream.write(response.as_bytes()).unwrap();
+                stream.flush().unwrap();
+            }
+            Err(e) => {
+                return Err(e.to_string());
+            }
+        }
+    }
 }
