@@ -1,4 +1,11 @@
+use std::str;
 use crate::command::response::Response;
+
+#[derive(Debug)]
+pub struct Request {
+    command: String,
+    args: Vec<String>,
+}
 
 pub struct Protocol {
     result: Vec<String>, // 添加一个字段来存储解析的结果
@@ -11,96 +18,74 @@ impl Protocol {
         }
     }
 
-    pub fn parse(&mut self, data: &[u8]) -> Result<(), String> {
-        if data.is_empty() {
-            return Err("Empty input".to_string());
-        }
-
-        match data[0] as char {
-            '*' => {
-                self.parse_aggregate(data)?; // 处理聚合类型
+    pub fn parse(&mut self, buffer: &[u8]) -> Result<Vec<Request>, String> {
+        let mut requests = Vec::new();
+        let mut iter = buffer.split(|&b| b == b'\n');
+    
+        while let Some(line) = iter.next() {
+            if line.starts_with(b"*") {
+                let count = str::from_utf8(&line[1..])
+                    .map_err(|_| "Invalid UTF-8 sequence")?
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|_| "Invalid number of arguments")?;
+    
+                let mut args = Vec::with_capacity(count);
+    
+                for _ in 0..count {
+                    let line = iter.next().ok_or("Unexpected end of input")?;
+                    if !line.starts_with(b"$") {
+                        return Err("Expected '$'".into());
+                    }
+    
+                    let len = str::from_utf8(&line[1..])
+                        .map_err(|_| "Invalid UTF-8 sequence")?
+                        .trim()
+                        .parse::<usize>()
+                        .map_err(|_| "Invalid argument length")?;
+    
+                    let arg = iter.next().ok_or("Unexpected end of input")?;
+                    if arg.len() != len {
+                        return Err("Argument length mismatch".into());
+                    }
+    
+                    args.push(str::from_utf8(arg).map_err(|_| "Invalid UTF-8 sequence")?.into());
+                }
+    
+                let command = args.remove(0); // Assuming the first argument is the command    
+                requests.push(Request { command, args });
             }
-            '+' => {
-                let result = self.parse_simple_string(data)?;
-                println!("Parsed simple string: {}", result);
-            }
-            _ => return Err("Unknown type".to_string()),
         }
-        
-        Ok(())
+    
+        Ok(requests)
     }
 
-    pub fn parse_aggregate(&mut self, data: &[u8]) -> Result<(), String> {
-        let data = String::from_utf8_lossy(data);
-        let mut lines = data.split("\r\n");
-    
-        let command_line = match lines.next() {
-            Some(line) => line,
-            None => return Err("No command line found".to_string()),
-        };
-    
-        if !command_line.starts_with("*") {
-            return Err("Invalid command line".to_string());
+    pub fn handle_requests(&self, requests: Vec<Request>) -> Result<Vec<String>, String> {
+        let mut responses = Vec::new();
+
+        for request in requests {
+            let response = self.handle_request(request)?;
+            responses.push(response);
         }
-    
-        let count: usize = command_line[1..].parse().map_err(|_| "Invalid count".to_string())?;
-    
-        for _ in 0..count {
-            let length_line = match lines.next() {
-                Some(line) => line,
-                None => return Err("No length line found".to_string()),
-            };
-    
-            if !length_line.starts_with("$") {
-                return Err("Invalid length line".to_string());
-            }
-    
-            let length: usize = length_line[1..].parse().map_err(|_| "Invalid length".to_string())?;
-    
-            let data_line = match lines.next() {
-                Some(line) => line,
-                None => return Err("No data line found".to_string()),
-            };
-    
-            if data_line.len() != length {
-                return Err("Data line length mismatch".to_string());
-            }
-    
-            self.result.push(data_line.to_string());
-        }
-    
-        Ok(())
+
+        Ok(responses)
     }
 
-    pub fn parse_simple_string(&mut self, data: &[u8]) -> Result<String, String> {
-        let data_str = std::str::from_utf8(data).map_err(|_| "Invalid UTF-8 sequence")?;
-        if !data_str.starts_with('+') {
-            return Err("Not a simple string".to_string());
-        }
+    fn handle_request(&self, request: Request) -> Result<String, String> {
+        println!("Handling request: {:?}", request);
 
-        let end = data_str.find("\r\n").ok_or("No end of line")?;
-        let content = &data_str[1..end];
-
-        Ok(content.to_string())
-    }
-
-    pub fn handle_command(&self) -> Result<String, String> {
-        println!("Handling command: {:?}", self.result);
-    
-        match self.result.first() {
-            Some(command) if command.to_uppercase() == "PING" => {
-                Ok(Response::SimpleString("PONG".to_string()).to_string())
-            }
-            Some(command) if command.to_uppercase() == "CONFIG" => {
-                if self.result.len() >= 3 && self.result[1].to_uppercase() == "GET" {
-                    match self.result[2].as_str() {
+        match request.command.to_uppercase().as_str() {
+            "PING" => Ok(Response::SimpleString("PONG".to_string()).to_string()),
+            "CONFIG" => {
+                if request.args.len() >= 2 && request.args[0].to_uppercase() == "GET" {
+                    match request.args[1].as_str() {
                         "save" => Ok(Response::Array(vec![
                             Response::BulkString(Some("save".to_string().into_bytes())),
                             Response::BulkString(Some("".to_string().into_bytes())),
                         ]).to_string()),
                         "appendonly" => Ok(Response::BulkString(Some("no".to_string().into_bytes())).to_string()),
                         "appendfsync" => Ok(Response::BulkString(Some("everysec".to_string().into_bytes())).to_string()),
-                        _ => Err(Response::Error("Unknown config option".to_string()).to_string()),
+                        _ => Ok(Response::BulkString(None).to_string()),  // Return an empty response for unknown config options
                     }
                 } else {
                     Ok(Response::Array(vec![
