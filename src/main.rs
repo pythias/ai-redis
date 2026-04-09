@@ -1,17 +1,24 @@
-// main.rs
-use std::net::TcpListener;
-use std::thread;
+//! ai-redis — A Redis-compatible server written in Rust.
 
+use std::env;
+
+mod command;
 mod network;
+mod protocol;
+mod storage;
+
+use storage::Storage;
+use network::server::run;
 
 fn main() {
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    Storage::init();
 
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
+    let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:6379".to_string());
+    log::info!("ai-redis v0.1.0 — starting server on {}", addr);
 
-        thread::spawn(|| {
-            network::server::handle_connection(stream);
-        });
+    if let Err(e) = run(&addr) {
+        eprintln!("server error: {}", e);
+        std::process::exit(1);
     }
 }
