@@ -4,6 +4,8 @@ pub mod router;
 pub mod generic;
 pub mod connection;
 pub mod string;
+pub mod hash;
+pub mod list;
 
 use crate::protocol::Value;
 

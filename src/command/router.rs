@@ -72,7 +72,37 @@ impl Router {
         // Connection commands
         self.register("CLIENT", super::connection::client);
 
-        // TODO: Hash, List, Set, Sorted Set, etc.
+        // Hash commands
+        self.register("HSET", super::hash::hset);
+        self.register("HGET", super::hash::hget);
+        self.register("HMGET", super::hash::hmget);
+        self.register("HMSET", super::hash::hmset);
+        self.register("HDEL", super::hash::hdel);
+        self.register("HLEN", super::hash::hlen);
+        self.register("HEXISTS", super::hash::hexists);
+        self.register("HGETALL", super::hash::hgetall);
+        self.register("HKEYS", super::hash::hkeys);
+        self.register("HVALS", super::hash::hvals);
+        self.register("HSETNX", super::hash::hsetnx);
+        self.register("HINCRBY", super::hash::hincrby);
+        self.register("HINCRBYFLOAT", super::hash::hincrbyfloat);
+        self.register("HSTRLEN", super::hash::hstrlen);
+
+        // List commands
+        self.register("LPUSH", super::list::lpush);
+        self.register("RPUSH", super::list::rpush);
+        self.register("LPOP", super::list::lpop);
+        self.register("RPOP", super::list::rpop);
+        self.register("LRANGE", super::list::lrange);
+        self.register("LLEN", super::list::llen);
+        self.register("LINDEX", super::list::lindex);
+        self.register("LSET", super::list::lset);
+        self.register("LTRIM", super::list::ltrim);
+        self.register("LPUSHX", super::list::lpushx);
+        self.register("RPUSHX", super::list::rpushx);
+        self.register("LREM", super::list::lrem);
+
+        // TODO: Set, Sorted Set, Bitmap, etc.
     }
 }
 
