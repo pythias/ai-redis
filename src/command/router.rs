@@ -102,7 +102,42 @@ impl Router {
         self.register("RPUSHX", super::list::rpushx);
         self.register("LREM", super::list::lrem);
 
-        // TODO: Set, Sorted Set, Bitmap, etc.
+        // Set commands
+        self.register("SADD", super::set::sadd);
+        self.register("SREM", super::set::srem);
+        self.register("SPOP", super::set::spop);
+        self.register("SMEMBERS", super::set::smembers);
+        self.register("SISMEMBER", super::set::sismember);
+        self.register("SCARD", super::set::scard);
+        self.register("SMOVE", super::set::smove);
+        self.register("SINTER", super::set::sinter);
+        self.register("SUNION", super::set::sunion);
+        self.register("SDIFF", super::set::sdiff);
+
+        // Sorted Set commands
+        self.register("ZADD", super::sorted_set::zadd);
+        self.register("ZRANGE", super::sorted_set::zrange);
+        self.register("ZREVRANGE", super::sorted_set::zrevrange);
+        self.register("ZRANGEBYSCORE", super::sorted_set::zrangebyscore);
+        self.register("ZREVRANGEBYSCORE", super::sorted_set::zrevrangebyscore);
+        self.register("ZINCRBY", super::sorted_set::zincrby);
+        self.register("ZSCORE", super::sorted_set::zscore);
+        self.register("ZCARD", super::sorted_set::zcard);
+        self.register("ZCOUNT", super::sorted_set::zcount);
+        self.register("ZRANK", super::sorted_set::zrank);
+        self.register("ZREVRANK", super::sorted_set::zrevrank);
+        self.register("ZREM", super::sorted_set::zrem);
+        self.register("ZREMRANGEBYRANK", super::sorted_set::zremrangebyrank);
+        self.register("ZREMRANGEBYSCORE", super::sorted_set::zremrangebyscore);
+
+        // Bitmap commands
+        self.register("SETBIT", super::bitmap::setbit);
+        self.register("GETBIT", super::bitmap::getbit);
+        self.register("BITCOUNT", super::bitmap::bitcount);
+        self.register("BITOP", super::bitmap::bitop);
+        self.register("BITPOS", super::bitmap::bitpos);
+
+        // TODO: HyperLogLog, Geospatial, Stream, Pub/Sub, Lua, Persistence, etc.
     }
 }
 
