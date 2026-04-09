@@ -137,7 +137,28 @@ impl Router {
         self.register("BITOP", super::bitmap::bitop);
         self.register("BITPOS", super::bitmap::bitpos);
 
-        // TODO: HyperLogLog, Geospatial, Stream, Pub/Sub, Lua, Persistence, etc.
+        // HyperLogLog commands
+        self.register("PFADD", super::hyperloglog::pfadd);
+        self.register("PFCOUNT", super::hyperloglog::pfcount);
+        self.register("PFMERGE", super::hyperloglog::pfmerge);
+
+        // Geospatial commands
+        self.register("GEOADD", super::geo::geoadd);
+        self.register("GEOPOS", super::geo::geopos);
+        self.register("GEODIST", super::geo::geodist);
+        self.register("GEORADIUS", super::geo::georadius);
+
+        // Stream commands
+        self.register("XADD", super::stream::xadd);
+        self.register("XLEN", super::stream::xlen);
+        self.register("XRANGE", super::stream::xrange);
+        self.register("XREVRANGE", super::stream::xrevrange);
+        self.register("XREAD", super::stream::xread);
+        self.register("XGROUP", super::stream::xgroup_create);
+        self.register("XINFO", super::stream::xinfo_stream);
+        self.register("XDEL", super::stream::xdel);
+
+        // TODO: Pub/Sub, Lua, Persistence, etc.
     }
 }
 

@@ -9,6 +9,9 @@ pub mod list;
 pub mod set;
 pub mod sorted_set;
 pub mod bitmap;
+pub mod hyperloglog;
+pub mod geo;
+pub mod stream;
 
 use crate::protocol::Value;
 
