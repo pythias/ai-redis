@@ -5,6 +5,7 @@ use crate::protocol::Value;
 use crate::storage::data::{RedisData, StoredValue};
 use crate::storage::Storage;
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 pub fn zadd(args: &[Value]) -> CommandResult {
     if args.len() < 3 { return Err(CommandError::WrongNumberOfArgs("ZADD".into())); }
@@ -83,8 +84,7 @@ pub fn zrange(args: &[Value]) -> CommandResult {
                     }
                     
                     let mut result = Vec::new();
-                    for i in start..=stop {
-                        let (member, score) = &items[i];
+                    for (member, score) in items.iter().take(stop + 1).skip(start) {
                         result.push(Value::BulkString(Some(member.clone())));
                         if withscores {
                             result.push(Value::BulkString(Some(score.to_string())));
@@ -131,8 +131,7 @@ pub fn zrevrange(args: &[Value]) -> CommandResult {
                     }
                     
                     let mut result = Vec::new();
-                    for i in start..=stop {
-                        let (member, score) = &items[i];
+                    for (member, score) in items.iter().take(stop + 1).skip(start) {
                         result.push(Value::BulkString(Some(member.clone())));
                         if withscores {
                             result.push(Value::BulkString(Some(score.to_string())));
@@ -447,5 +446,236 @@ fn normalize_idx(idx: i64, len: i64) -> usize {
         (len + idx).max(0) as usize
     } else {
         idx.min(len) as usize
+    }
+}
+
+// ─── Pop operations ────────────────────────────────────────────────────────────
+
+pub fn zpop_min(args: &[Value]) -> CommandResult {
+    // ZPOPMIN key [key ...] [COUNT count]
+    if args.is_empty() {
+        return Err(CommandError::WrongNumberOfArgs("ZPOPMIN".into()));
+    }
+    let key = args[0].as_str().ok_or(CommandError::WrongType)?;
+    let count = if args.len() > 2 {
+        let op = args[1].as_str().unwrap_or("").to_uppercase();
+        if op == "COUNT" {
+            args[2].as_int().or_else(|| args[2].as_str().and_then(|s| s.parse().ok())).unwrap_or(1) as usize
+        } else {
+            1
+        }
+    } else {
+        1
+    };
+
+    let store = Storage::get();
+    let mut guard = store.write().unwrap();
+
+    match guard.get_mut(key) {
+        Some(v) if !v.is_expired() => {
+            match &mut v.data {
+                RedisData::SortedSet(zset) => {
+                    if zset.is_empty() {
+                        return Ok(Value::Array(vec![]));
+                    }
+                    let mut result = Vec::new();
+                    for _ in 0..count.min(zset.len()) {
+                        if let Some(member) = zset.keys().next().cloned() {
+                            if let Some(score) = zset.remove(&member) {
+                                result.push(Value::BulkString(Some(member)));
+                                result.push(Value::BulkString(Some(score.to_string())));
+                            }
+                        }
+                    }
+                    Ok(Value::Array(result))
+                }
+                _ => Err(CommandError::WrongType),
+            }
+        }
+        _ => Ok(Value::Array(vec![])),
+    }
+}
+
+pub fn zpop_max(args: &[Value]) -> CommandResult {
+    // ZPOPMAX key [key ...] [COUNT count]
+    if args.is_empty() {
+        return Err(CommandError::WrongNumberOfArgs("ZPOPMAX".into()));
+    }
+    let key = args[0].as_str().ok_or(CommandError::WrongType)?;
+    let count = if args.len() > 2 {
+        let op = args[1].as_str().unwrap_or("").to_uppercase();
+        if op == "COUNT" {
+            args[2].as_int().or_else(|| args[2].as_str().and_then(|s| s.parse().ok())).unwrap_or(1) as usize
+        } else {
+            1
+        }
+    } else {
+        1
+    };
+
+    let store = Storage::get();
+    let mut guard = store.write().unwrap();
+
+    match guard.get_mut(key) {
+        Some(v) if !v.is_expired() => {
+            match &mut v.data {
+                RedisData::SortedSet(zset) => {
+                    if zset.is_empty() {
+                        return Ok(Value::Array(vec![]));
+                    }
+                    let mut result = Vec::new();
+                    let keys: Vec<String> = zset.keys().cloned().collect();
+                    for k in keys.into_iter().rev().take(count) {
+                        if let Some(score) = zset.remove(&k) {
+                            result.push(Value::BulkString(Some(k)));
+                            result.push(Value::BulkString(Some(score.to_string())));
+                        }
+                    }
+                    Ok(Value::Array(result))
+                }
+                _ => Err(CommandError::WrongType),
+            }
+        }
+        _ => Ok(Value::Array(vec![])),
+    }
+}
+
+// ─── Blocking pop commands ────────────────────────────────────────────────────
+
+pub fn bzpopmin(args: &[Value]) -> CommandResult {
+    blocking_zpop(args, true)
+}
+
+pub fn bzpopmax(args: &[Value]) -> CommandResult {
+    blocking_zpop(args, false)
+}
+
+fn blocking_zpop(args: &[Value], min: bool) -> CommandResult {
+    // BZPOPMIN/BZPOPMAX key [key ...] timeout
+    if args.len() < 2 {
+        return Err(CommandError::WrongNumberOfArgs(if min { "BZPOPMIN" } else { "BZPOPMAX" }.into()));
+    }
+    let keys: Vec<&str> = args[..args.len() - 1].iter().filter_map(|v| v.as_str()).collect();
+    let timeout_sec: i64 = args[args.len() - 1]
+        .as_int()
+        .or_else(|| args[args.len() - 1].as_str().and_then(|s| s.parse().ok()))
+        .ok_or(CommandError::InvalidInt)?;
+    let timeout = if timeout_sec < 0 {
+        Duration::ZERO
+    } else {
+        Duration::from_secs(timeout_sec as u64)
+    };
+    let start = Instant::now();
+    let deadline = start + timeout;
+
+    loop {
+        for key in &keys {
+            if let Some((member, score)) = super::super::network::blocking::zset_pop(key, min) {
+                super::super::network::blocking::notify_waiters(key);
+                return Ok(Value::Array(vec![
+                    Value::BulkString(Some((*key).to_string())),
+                    Value::BulkString(Some(member)),
+                    Value::BulkString(Some(score.to_string())),
+                ]));
+            }
+        }
+        if deadline <= Instant::now() {
+            return Ok(Value::BulkString(None));
+        }
+        let remaining = deadline - Instant::now();
+        std::thread::sleep(remaining.min(Duration::from_millis(50)));
+    }
+}
+
+pub fn bzmpop(args: &[Value]) -> CommandResult {
+    // BZMPOP numkeys key [key ...] <MIN | MAX> [COUNT count] timeout
+    if args.len() < 4 {
+        return Err(CommandError::WrongNumberOfArgs("BZMPOP".into()));
+    }
+
+    let numkeys: i64 = args[0]
+        .as_int()
+        .or_else(|| args[0].as_str().and_then(|s| s.parse().ok()))
+        .ok_or(CommandError::InvalidInt)?;
+    if numkeys < 1 {
+        return Err(CommandError::Generic("numkeys must be positive".into()));
+    }
+    if args.len() < (numkeys as usize) + 3 {
+        return Err(CommandError::WrongNumberOfArgs("BZMPOP".into()));
+    }
+
+    let keys: Vec<&str> = args[1..(numkeys as usize + 1)]
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    let min = args[(numkeys as usize) + 1].as_str().unwrap_or("").to_uppercase() == "MIN";
+
+    let count = if args.len() > (numkeys as usize) + 4 {
+        let op = args[(numkeys as usize) + 2].as_str().unwrap_or("").to_uppercase();
+        if op == "COUNT" {
+            args[(numkeys as usize) + 3]
+                .as_int()
+                .or_else(|| args[(numkeys as usize) + 3].as_str().and_then(|s| s.parse().ok()))
+                .unwrap_or(1) as usize
+        } else {
+            1
+        }
+    } else {
+        1
+    };
+
+    let timeout_sec: i64 = args[args.len() - 1]
+        .as_int()
+        .or_else(|| args[args.len() - 1].as_str().and_then(|s| s.parse().ok()))
+        .ok_or(CommandError::InvalidInt)?;
+    let timeout = if timeout_sec < 0 {
+        Duration::ZERO
+    } else {
+        Duration::from_secs(timeout_sec as u64)
+    };
+
+    let start = Instant::now();
+    let deadline = start + timeout;
+
+    loop {
+        for key in &keys {
+            let store = Storage::get();
+            let mut guard = store.write().unwrap();
+
+            if let Some(v) = guard.get_mut(*key) {
+                if !v.is_expired() {
+                    if let RedisData::SortedSet(zset) = &mut v.data {
+                        if !zset.is_empty() {
+                            let mut items = Vec::new();
+                            let keys_to_remove: Vec<String> = if min {
+                                zset.keys().take(count).cloned().collect()
+                            } else {
+                                zset.keys().rev().take(count).cloned().collect()
+                            };
+                            for k in keys_to_remove {
+                                if let Some(score) = zset.remove(&k) {
+                                    items.push(Value::BulkString(Some(k)));
+                                    items.push(Value::BulkString(Some(score.to_string())));
+                                }
+                            }
+                            if !items.is_empty() {
+                                drop(guard);
+                                super::super::network::blocking::notify_waiters(key);
+                                return Ok(Value::Array(vec![
+                                    Value::BulkString(Some((*key).to_string())),
+                                    Value::Array(items),
+                                ]));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if deadline <= Instant::now() {
+            return Ok(Value::BulkString(None));
+        }
+        let remaining = deadline - Instant::now();
+        std::thread::sleep(remaining.min(Duration::from_millis(50)));
     }
 }

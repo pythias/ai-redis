@@ -12,6 +12,13 @@ pub mod bitmap;
 pub mod hyperloglog;
 pub mod geo;
 pub mod stream;
+pub mod persistence;
+pub mod config;
+pub mod server;
+pub mod lua;
+pub mod transaction;
+pub mod introspection;
+pub mod stream_geo;
 
 use crate::protocol::Value;
 
@@ -19,6 +26,7 @@ use crate::protocol::Value;
 pub type CommandResult = Result<Value, CommandError>;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum CommandError {
     WrongNumberOfArgs(String),
     NotImplemented(String),
@@ -26,6 +34,7 @@ pub enum CommandError {
     ValueTooLarge,
     InvalidInt,
     InvalidFloat,
+    SyntaxError,
     IndexOutOfRange,
     UnknownCommand(String),
     Generic(String),
@@ -46,6 +55,7 @@ impl CommandError {
             CommandError::ValueTooLarge => "ERR string exceeds maximum allowed size".to_string(),
             CommandError::InvalidInt => "ERR value is not an integer".to_string(),
             CommandError::InvalidFloat => "ERR value is not a float".to_string(),
+            CommandError::SyntaxError => "ERR syntax error".to_string(),
             CommandError::IndexOutOfRange => "ERR index out of range".to_string(),
             CommandError::UnknownCommand(cmd) => format!("ERR unknown command '{}'", cmd),
             CommandError::Generic(s) => s.clone(),

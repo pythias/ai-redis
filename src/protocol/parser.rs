@@ -1,11 +1,12 @@
 //! RESP2 protocol parser.
 //!
 //! Frame types:
+//!
 //!   +  Simple String : +Content\r\n
 //!   -  Error        : -ERR message\r\n
-//!   :  Integer      : :123\r\n
-//!   $  Bulk String  : $5\r\nhello\r\n   (-1 = null)
-//!   *  Array        : *3\r\n... frames ...  (-1 = null)
+//!      :  Integer      : :123\r\n
+//!      $  Bulk String  : $5\r\nhello\r\n   (-1 = null)
+//!      *  Array        : *3\r\n... frames ...  (-1 = null)
 
 use thiserror::Error;
 
@@ -47,6 +48,7 @@ impl Value {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_array(&self) -> Option<&[Value]> {
         match self { Value::Array(v) => Some(v), _ => None }
     }
@@ -55,6 +57,7 @@ impl Value {
         match self { Value::Integer(i) => Some(*i), _ => None }
     }
 
+    #[allow(dead_code)]
     pub fn is_null(&self) -> bool {
         matches!(self, Value::Null)
     }

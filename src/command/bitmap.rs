@@ -29,11 +29,10 @@ pub fn setbit(args: &[Value]) -> CommandResult {
         Some(v) if !v.is_expired() => {
             match &mut v.data {
                 RedisData::String(s) => {
-                    let bytes = s.as_bytes().to_vec();
-                    let old_byte = bytes.get(byte_offset).copied().unwrap_or(0);
+                    let old_byte = s.as_bytes().get(byte_offset).copied().unwrap_or(0);
                     let old_bit = (old_byte >> (7 - bit_offset)) & 1;
-                    
-                    let mut new_bytes = bytes;
+
+                    let mut new_bytes = s.as_bytes().to_vec();
                     if byte_offset >= new_bytes.len() {
                         new_bytes.resize(byte_offset + 1, 0);
                     }
@@ -42,7 +41,7 @@ pub fn setbit(args: &[Value]) -> CommandResult {
                     } else {
                         new_bytes[byte_offset] &= !(1 << (7 - bit_offset));
                     }
-                    v.data = RedisData::String(String::from_utf8_lossy(&new_bytes).to_string());
+                    *s = String::from_utf8_lossy(&new_bytes).to_string();
                     old_bit
                 }
                 _ => return Err(CommandError::WrongType),
@@ -93,7 +92,7 @@ pub fn getbit(args: &[Value]) -> CommandResult {
 }
 
 pub fn bitcount(args: &[Value]) -> CommandResult {
-    if args.len() < 1 { return Err(CommandError::WrongNumberOfArgs("BITCOUNT".into())); }
+    if args.is_empty() { return Err(CommandError::WrongNumberOfArgs("BITCOUNT".into())); }
     let key = args[0].as_str().ok_or(CommandError::WrongType)?;
     
     let (start, end) = if args.len() >= 3 {

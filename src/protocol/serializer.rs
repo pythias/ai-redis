@@ -40,14 +40,6 @@ pub fn encode(value: &Value) -> Vec<u8> {
     }
 }
 
-pub fn ok() -> Value { Value::SimpleString("OK".to_string()) }
-pub fn error(msg: impl Into<String>) -> Value { Value::Error(msg.into()) }
-pub fn integer(n: i64) -> Value { Value::Integer(n) }
-pub fn bulk(s: impl Into<String>) -> Value { Value::BulkString(Some(s.into())) }
-pub fn null_bulk() -> Value { Value::BulkString(None) }
-pub fn array(values: Vec<Value>) -> Value { Value::Array(values) }
-pub fn nil() -> Value { Value::Null }
-
 #[cfg(test)]
 mod tests {
     use super::super::parser::Value;

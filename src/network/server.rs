@@ -6,16 +6,26 @@ use std::thread;
 use std::time::Duration;
 
 use crate::command::router::Router;
+use crate::command::server::SHUTDOWN_FLAG;
 use crate::protocol::parse_command;
 use crate::protocol::serializer::encode;
 use crate::protocol::Value;
 
 pub fn run(addr: &str) -> std::io::Result<()> {
+    // Initialize config
+    crate::command::config::init_config();
+
     let listener = TcpListener::bind(addr)?;
     listener.set_nonblocking(false)?;
     log::info!("ai-redis listening on {}", addr);
 
     for stream in listener.incoming() {
+        // Check if shutdown was requested
+        if SHUTDOWN_FLAG.load(std::sync::atomic::Ordering::SeqCst) {
+            log::info!("Shutdown requested, stopping server");
+            break;
+        }
+
         match stream {
             Ok(stream) => {
                 stream.set_nodelay(true).ok();
@@ -65,7 +75,20 @@ fn handle_client(mut stream: TcpStream) {
                         let args: Vec<Value> = cmd_args.to_vec();
                         match router.dispatch(&name, &args) {
                             Ok(v) => v,
-                            Err(e) => e.to_resp(),
+                            Err(e) => {
+                                // Check for shutdown signal
+                                if let crate::command::CommandError::Generic(s) = &e {
+                                    if s == "shutdown" {
+                                        log::info!("Shutdown command received from client {}", peer);
+                                        let _ = stream.write_all(&encode(&e.to_resp()));
+                                        let _ = stream.shutdown(Shutdown::Both);
+                                        // Signal global shutdown
+                                        SHUTDOWN_FLAG.store(true, std::sync::atomic::Ordering::SeqCst);
+                                        return;
+                                    }
+                                }
+                                e.to_resp()
+                            }
                         }
                     } else {
                         Value::Error("empty command".to_string())

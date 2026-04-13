@@ -90,7 +90,7 @@ pub fn mget(args: &[Value]) -> CommandResult {
 }
 
 pub fn mset(args: &[Value]) -> CommandResult {
-    if args.len() % 2 != 0 { return Err(CommandError::WrongNumberOfArgs("MSET".into())); }
+    if !args.len().is_multiple_of(2) { return Err(CommandError::WrongNumberOfArgs("MSET".into())); }
     let store = Storage::get();
     let mut guard = store.write().unwrap();
     for pair in args.chunks(2) {
@@ -262,6 +262,85 @@ pub fn getset(args: &[Value]) -> CommandResult {
     let old = guard.get(key).and_then(|v| if v.is_expired() { None } else { v.data.as_string().cloned() });
     guard.insert(key.to_string(), StoredValue::new(RedisData::String(val.to_string())));
     Ok(Value::BulkString(old))
+}
+
+pub fn getdel(args: &[Value]) -> CommandResult {
+    if args.is_empty() { return Err(CommandError::WrongNumberOfArgs("GETDEL".into())); }
+    let key = args[0].as_str().ok_or(CommandError::WrongType)?;
+    let store = Storage::get();
+    let mut guard = store.write().unwrap();
+    let result = guard.get(key).and_then(|v| if v.is_expired() { None } else { v.data.as_string().cloned() });
+    guard.remove(key);
+    Ok(Value::BulkString(result))
+}
+
+pub fn getex(args: &[Value]) -> CommandResult {
+    if args.is_empty() { return Err(CommandError::WrongNumberOfArgs("GETEX".into())); }
+    let key = args[0].as_str().ok_or(CommandError::WrongType)?;
+    let store = Storage::get();
+    let mut guard = store.write().unwrap();
+
+    let result = guard.get(key).and_then(|v| if v.is_expired() { None } else { v.data.as_string().cloned() });
+
+    // If key doesn't exist or is expired, return nil without setting anything
+    if result.is_none() {
+        return Ok(Value::BulkString(None));
+    }
+
+    // Parse options as alternating keyword/value pairs after the key
+    let mut persist = false;
+    let mut expire_at: Option<i64> = None;
+    let mut i = 1;
+    while i < args.len() {
+        let op = args[i].as_str().unwrap_or("").to_uppercase();
+        match op.as_str() {
+            "EX" => {
+                if i + 1 >= args.len() { return Err(CommandError::SyntaxError); }
+                i += 1;
+                let secs: i64 = args[i].as_int().or_else(|| args[i].as_str().and_then(|s| s.parse().ok())).ok_or(CommandError::InvalidInt)?;
+                if secs > 0 {
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                    expire_at = Some(now as i64 + secs);
+                }
+            }
+            "PX" => {
+                if i + 1 >= args.len() { return Err(CommandError::SyntaxError); }
+                i += 1;
+                let ms: i64 = args[i].as_int().or_else(|| args[i].as_str().and_then(|s| s.parse().ok())).ok_or(CommandError::InvalidInt)?;
+                if ms > 0 {
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+                    expire_at = Some(now as i64 + ms);
+                }
+            }
+            "EXAT" => {
+                if i + 1 >= args.len() { return Err(CommandError::SyntaxError); }
+                i += 1;
+                let secs: i64 = args[i].as_int().or_else(|| args[i].as_str().and_then(|s| s.parse().ok())).ok_or(CommandError::InvalidInt)?;
+                expire_at = Some(secs);
+            }
+            "PXAT" => {
+                if i + 1 >= args.len() { return Err(CommandError::SyntaxError); }
+                i += 1;
+                let ms: i64 = args[i].as_int().or_else(|| args[i].as_str().and_then(|s| s.parse().ok())).ok_or(CommandError::InvalidInt)?;
+                expire_at = Some(ms);
+            }
+            "PERSIST" => {
+                persist = true;
+            }
+            _ => return Err(CommandError::SyntaxError),
+        }
+        i += 1;
+    }
+
+    if let Some(v) = guard.get_mut(key) {
+        if persist {
+            v.expire_at = None;
+        } else if let Some(at) = expire_at {
+            v.expire_at = Some(at);
+        }
+    }
+
+    Ok(Value::BulkString(result))
 }
 
 fn check_args(args: &[Value], expected: usize, cmd: &str) -> CommandResult {

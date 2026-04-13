@@ -80,7 +80,7 @@ pub fn hmget(args: &[Value]) -> CommandResult {
 }
 
 pub fn hmset(args: &[Value]) -> CommandResult {
-    if args.len() < 3 || (args.len() - 1) % 2 != 0 {
+    if args.len() < 3 || !(args.len() - 1).is_multiple_of(2) {
         return Err(CommandError::WrongNumberOfArgs("HMSET".into()));
     }
     let key = args[0].as_str().ok_or(CommandError::WrongType)?;
@@ -237,9 +237,9 @@ pub fn hsetnx(args: &[Value]) -> CommandResult {
     let store = Storage::get();
     let mut guard = store.write().unwrap();
 
-    match guard.get(key) {
+    match guard.get_mut(key) {
         Some(v) if !v.is_expired() => {
-            match &mut v.data.clone() {
+            match &mut v.data {
                 RedisData::Hash(h) => {
                     if h.contains_key(field) {
                         return Ok(Value::Integer(0));
@@ -322,17 +322,16 @@ pub fn hincrbyfloat(args: &[Value]) -> CommandResult {
     let new_val = current + delta;
 
     match guard.get_mut(key) {
-        Some(v) => {
+        Some(v) if !v.is_expired() => {
             if let RedisData::Hash(h) = &mut v.data {
                 h.insert(field.to_string(), new_val.to_string());
             }
         }
-        None => {
+        _ => {
             let mut h = std::collections::HashMap::new();
             h.insert(field.to_string(), new_val.to_string());
             guard.insert(key.to_string(), StoredValue::new(RedisData::Hash(h)));
         }
-        _ => {}
     }
 
     Ok(Value::BulkString(Some(new_val.to_string())))

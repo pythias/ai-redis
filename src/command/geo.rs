@@ -7,7 +7,7 @@ use crate::storage::Storage;
 use std::collections::HashMap;
 
 pub fn geoadd(args: &[Value]) -> CommandResult {
-    if args.len() < 4 || (args.len() - 1) % 3 != 0 {
+    if args.len() < 4 || !(args.len() - 1).is_multiple_of(3) {
         return Err(CommandError::WrongNumberOfArgs("GEOADD".into()));
     }
     let key = args[0].as_str().ok_or(CommandError::WrongType)?;

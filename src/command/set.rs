@@ -196,8 +196,7 @@ pub fn smove(args: &[Value]) -> CommandResult {
                                 }
                             }
                             _ => {
-                                let mut dst_set = Vec::new();
-                                dst_set.push(member.to_string());
+                                let dst_set = vec![member.to_string()];
                                 guard.insert(dst.to_string(), StoredValue::new(RedisData::Set(dst_set)));
                             }
                         }
@@ -316,4 +315,155 @@ pub fn sdiff(args: &[Value]) -> CommandResult {
 
     let members: Vec<Value> = result_set.iter().map(|m| Value::BulkString(Some(m.clone()))).collect();
     Ok(Value::Array(members))
+}
+
+pub fn sinterstore(args: &[Value]) -> CommandResult {
+    if args.len() < 2 { return Err(CommandError::WrongNumberOfArgs("SINTERSTORE".into())); }
+    let dest = args[0].as_str().ok_or(CommandError::WrongType)?;
+    let keys: Vec<&str> = args[1..].iter().filter_map(|v| v.as_str()).collect();
+
+    let store = Storage::get();
+    let guard = store.read().unwrap();
+
+    let mut result_set: Option<Vec<String>> = None;
+
+    for key in &keys {
+        match guard.get(*key) {
+            Some(v) if !v.is_expired() => {
+                match &v.data {
+                    RedisData::Set(set) => {
+                        if let Some(ref mut rs) = result_set {
+                            *rs = rs.iter().filter(|m| set.contains(m)).cloned().collect();
+                        } else {
+                            result_set = Some(set.clone());
+                        }
+                    }
+                    _ => return Err(CommandError::WrongType),
+                }
+            }
+            _ => {
+                drop(guard);
+                let mut wguard = store.write().unwrap();
+                wguard.remove(dest);
+                return Ok(Value::Integer(0));
+            }
+        }
+    }
+
+    let result = result_set.unwrap_or_default();
+    let count = result.len();
+
+    drop(guard);
+    let mut wguard = store.write().unwrap();
+    wguard.insert(dest.to_string(), StoredValue::new(RedisData::Set(result.into_iter().collect())));
+    Ok(Value::Integer(count as i64))
+}
+
+pub fn sunionstore(args: &[Value]) -> CommandResult {
+    if args.len() < 2 { return Err(CommandError::WrongNumberOfArgs("SUNIONSTORE".into())); }
+    let dest = args[0].as_str().ok_or(CommandError::WrongType)?;
+    let keys: Vec<&str> = args[1..].iter().filter_map(|v| v.as_str()).collect();
+
+    let store = Storage::get();
+    let guard = store.read().unwrap();
+
+    let mut result_set: Vec<String> = Vec::new();
+
+    for key in &keys {
+        match guard.get(*key) {
+            Some(v) if !v.is_expired() => {
+                match &v.data {
+                    RedisData::Set(set) => {
+                        for m in set {
+                            if !result_set.contains(m) {
+                                result_set.push(m.clone());
+                            }
+                        }
+                    }
+                    _ => return Err(CommandError::WrongType),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let count = result_set.len();
+    drop(guard);
+    let mut wguard = store.write().unwrap();
+    wguard.insert(dest.to_string(), StoredValue::new(RedisData::Set(result_set.into_iter().collect())));
+    Ok(Value::Integer(count as i64))
+}
+
+pub fn sdiffstore(args: &[Value]) -> CommandResult {
+    if args.len() < 2 { return Err(CommandError::WrongNumberOfArgs("SDIFFSTORE".into())); }
+    let dest = args[0].as_str().ok_or(CommandError::WrongType)?;
+    let keys: Vec<&str> = args[1..].iter().filter_map(|v| v.as_str()).collect();
+
+    let store = Storage::get();
+    let guard = store.read().unwrap();
+
+    let first_key = keys[0];
+    let first_set = match guard.get(first_key) {
+        Some(v) if !v.is_expired() => {
+            match &v.data {
+                RedisData::Set(set) => set.clone(),
+                _ => return Err(CommandError::WrongType),
+            }
+        }
+        _ => {
+            drop(guard);
+            let mut wguard = store.write().unwrap();
+            wguard.remove(dest);
+            return Ok(Value::Integer(0));
+        }
+    };
+
+    let mut result_set = first_set;
+
+    for key in &keys[1..] {
+        match guard.get(*key) {
+            Some(v) if !v.is_expired() => {
+                match &v.data {
+                    RedisData::Set(set) => {
+                        result_set.retain(|m| !set.contains(m));
+                    }
+                    _ => return Err(CommandError::WrongType),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let count = result_set.len();
+    drop(guard);
+    let mut wguard = store.write().unwrap();
+    wguard.insert(dest.to_string(), StoredValue::new(RedisData::Set(result_set.into_iter().collect())));
+    Ok(Value::Integer(count as i64))
+}
+
+pub fn smismember(args: &[Value]) -> CommandResult {
+    if args.len() < 2 { return Err(CommandError::WrongNumberOfArgs("SMISMEMBER".into())); }
+    let key = args[0].as_str().ok_or(CommandError::WrongType)?;
+    let members: Vec<&str> = args[1..].iter().filter_map(|v| v.as_str()).collect();
+
+    let store = Storage::get();
+    let guard = store.read().unwrap();
+
+    match guard.get(key) {
+        Some(v) if !v.is_expired() => {
+            match &v.data {
+                RedisData::Set(set) => {
+                    let results: Vec<Value> = members.iter().map(|m| {
+                        Value::Integer(if set.contains(&m.to_string()) { 1 } else { 0 })
+                    }).collect();
+                    Ok(Value::Array(results))
+                }
+                _ => Err(CommandError::WrongType),
+            }
+        }
+        _ => {
+            let results: Vec<Value> = args[1..].iter().map(|_| Value::Integer(0)).collect();
+            Ok(Value::Array(results))
+        }
+    }
 }

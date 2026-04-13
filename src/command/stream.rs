@@ -207,7 +207,7 @@ pub fn xgroup_create(_args: &[Value]) -> CommandResult {
 }
 
 pub fn xinfo_stream(args: &[Value]) -> CommandResult {
-    if args.len() < 1 { return Err(CommandError::WrongNumberOfArgs("XINFO STREAM".into())); }
+    if args.is_empty() { return Err(CommandError::WrongNumberOfArgs("XINFO STREAM".into())); }
     let key = args[0].as_str().ok_or(CommandError::WrongType)?;
 
     let store = Storage::get();
@@ -220,8 +220,8 @@ pub fn xinfo_stream(args: &[Value]) -> CommandResult {
                     let mut ids: Vec<&String> = s.keys().collect();
                     ids.sort();
                     
-                    let first = ids.first().map(|id| id.clone());
-                    let last = ids.last().map(|id| id.clone());
+                    let first = ids.first().cloned();
+                    let last = ids.last().cloned();
                     
                     let info = vec![
                         Value::Array(vec![

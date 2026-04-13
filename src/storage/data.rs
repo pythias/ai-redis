@@ -1,5 +1,6 @@
 //! Redis value types stored in memory.
 
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 /// A stored value with an optional TTL (absolute Unix timestamp in ms).
@@ -18,6 +19,10 @@ impl StoredValue {
         StoredValue { data, expire_at: Some(current_time_ms() + ttl_secs * 1000) }
     }
 
+    pub fn with_expiry(data: RedisData, expire_at: Option<i64>) -> Self {
+        StoredValue { data, expire_at }
+    }
+
     pub fn is_expired(&self) -> bool {
         self.expire_at.map(|ts| current_time_ms() > ts).unwrap_or(false)
     }
@@ -33,7 +38,7 @@ fn current_time_ms() -> i64 {
 }
 
 /// All Redis data types.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RedisData {
     String(String),
     List(VecDeque<String>),
@@ -59,14 +64,17 @@ impl RedisData {
         match self { RedisData::String(s) => Some(s), _ => None }
     }
 
+    #[allow(dead_code)]
     pub fn as_hash(&self) -> Option<&HashMap<String, String>> {
         match self { RedisData::Hash(h) => Some(h), _ => None }
     }
 
+    #[allow(dead_code)]
     pub fn as_hash_mut(&mut self) -> Option<&mut HashMap<String, String>> {
         match self { RedisData::Hash(h) => Some(h), _ => None }
     }
 
+    #[allow(dead_code)]
     pub fn as_list(&self) -> Option<&VecDeque<String>> {
         match self { RedisData::List(l) => Some(l), _ => None }
     }
@@ -76,7 +84,7 @@ impl RedisData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StreamEntry {
     pub fields: HashMap<String, String>,
     pub id: String,

@@ -1,93 +1,185 @@
-//! Thread-safe in-memory storage engine.
+//! Thread-safe in-memory storage engine with 16 Redis databases (0–15).
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::data::{RedisData, StoredValue};
 
-/// Global singleton storage.
-static mut STORAGE: Option<Arc<RwLock<HashMap<String, StoredValue>>>> = None;
+/// Number of Redis databases (0–15).
+const NUM_DATABASES: usize = 16;
+
+/// Thread-local selected database index (0–15). Defaults to 0.
+thread_local! {
+    static SELECTED_DB: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Global storage: an array of 16 OnceLock entries, each lazily initialized
+/// to an Arc<RwLock<HashMap>> on first access.
+pub static DATABASES: [OnceLock<Arc<RwLock<HashMap<String, StoredValue>>>>; NUM_DATABASES] = [
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+    const { OnceLock::new() },
+];
+
+/// Get the Arc<RwLock<HashMap>> for a specific DB index, initializing it
+/// on first access.
+fn get_db(db: usize) -> Arc<RwLock<HashMap<String, StoredValue>>> {
+    DATABASES[db]
+        .get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
+        .clone()
+}
 
 pub struct Storage;
 
+#[allow(dead_code)]
 impl Storage {
     /// Initialize the global storage.
     pub fn init() {
-        unsafe {
-            if STORAGE.is_none() {
-                STORAGE = Some(Arc::new(RwLock::new(HashMap::new())));
-            }
+        // All DBs are initialized lazily on first access.
+        for db in 0..NUM_DATABASES {
+            DATABASES[db].get_or_init(|| Arc::new(RwLock::new(HashMap::new())));
         }
     }
 
-    /// Get the global storage Arc (associated function, no receiver).
+    /// Get the current thread's selected database.
     pub fn get() -> Arc<RwLock<HashMap<String, StoredValue>>> {
-        unsafe {
-            STORAGE.clone().expect("Storage not initialized — call Storage::init() first")
+        SELECTED_DB.with(|cell| get_db(cell.get()))
+    }
+
+    /// Switch the current thread's selected database.
+    /// Panics if `db >= NUM_DATABASES`.
+    pub fn select(db: usize) {
+        assert!(db < NUM_DATABASES, "DB index out of range");
+        SELECTED_DB.with(|cell| cell.set(db));
+    }
+
+    /// Returns the current thread's selected DB index.
+    #[allow(dead_code)]
+    pub fn current_db() -> usize {
+        SELECTED_DB.with(|cell| cell.get())
+    }
+
+    /// Swap two databases globally (SWAPDB command).
+    pub fn swapdb(db1: usize, db2: usize) {
+        assert!(db1 < NUM_DATABASES && db2 < NUM_DATABASES, "DB index out of range");
+        if db1 == db2 {
+            return;
+        }
+        // Lock both HashMaps and swap their contents in-place.
+        let arc1 = get_db(db1);
+        let arc2 = get_db(db2);
+        let mut g1 = arc1.write().unwrap();
+        let mut g2 = arc2.write().unwrap();
+        std::mem::swap(&mut *g1, &mut *g2);
+    }
+
+    /// Move a key from the current database to another database on the current
+    /// thread (Redis MOVE semantics). Returns true if the key was moved.
+    #[allow(dead_code)]
+    pub fn move_key(key: &str, dest_db: usize) -> Option<(RedisData, Option<i64>)> {
+        assert!(dest_db < NUM_DATABASES, "DB index out of range");
+        let src_store = Self::get();
+        let mut src_guard = src_store.write().unwrap();
+        match src_guard.get(key) {
+            Some(v) if !v.is_expired() => {
+                let data = v.data.clone();
+                let expire_at = v.expire_at;
+                src_guard.remove(key);
+                drop(src_guard);
+                let dest_store = get_db(dest_db);
+                let mut dest_guard = dest_store.write().unwrap();
+                dest_guard.insert(
+                    key.to_string(),
+                    StoredValue::with_expiry(data.clone(), expire_at),
+                );
+                Some((data, expire_at))
+            }
+            _ => None,
         }
     }
 
-    fn with_storage<F, R>(f: F) -> R
+    /// Execute a closure with the current database.
+    fn with_db<F, R>(f: F) -> R
     where
         F: FnOnce(&Arc<RwLock<HashMap<String, StoredValue>>>) -> R,
     {
-        unsafe {
-            let store = STORAGE.clone().expect("Storage not initialized — call Storage::init() first");
-            f(&store)
-        }
+        let store = Self::get();
+        f(&store)
     }
 
     // ─── Key operations ─────────────────────────────────────────────────────
 
     pub fn delete(&self, key: &str) -> bool {
-        Self::with_storage(|store| {
-            store.write().unwrap().remove(key).is_some()
-        })
+        Self::with_db(|store| store.write().unwrap().remove(key).is_some())
     }
 
     pub fn exists(&self, key: &str) -> bool {
-        Self::with_storage(|store| {
-            store.read().unwrap().get(key).map(|v| !v.is_expired()).unwrap_or(false)
+        Self::with_db(|store| {
+            store
+                .read()
+                .unwrap()
+                .get(key)
+                .map(|v| !v.is_expired())
+                .unwrap_or(false)
         })
     }
 
     pub fn r#type(&self, key: &str) -> String {
-        Self::with_storage(|store| {
-            match store.read().unwrap().get(key) {
-                Some(v) if v.is_expired() => "none".to_string(),
-                Some(v) => v.type_name().to_string(),
-                None => "none".to_string(),
-            }
+        Self::with_db(|store| match store.read().unwrap().get(key) {
+            Some(v) if v.is_expired() => "none".to_string(),
+            Some(v) => v.type_name().to_string(),
+            None => "none".to_string(),
         })
     }
 
     // ─── TTL ────────────────────────────────────────────────────────────────
 
     pub fn expire(&self, key: &str, secs: i64) -> bool {
-        Self::with_storage(|store| {
+        Self::with_db(|store| {
             let mut guard = store.write().unwrap();
             if let Some(v) = guard.get_mut(key) {
-                if v.is_expired() { return false; }
+                if v.is_expired() {
+                    return false;
+                }
                 v.expire_at = Some(current_time_ms() + secs * 1000);
                 true
-            } else { false }
+            } else {
+                false
+            }
         })
     }
 
     pub fn expireat(&self, key: &str, timestamp: i64) -> bool {
-        Self::with_storage(|store| {
+        Self::with_db(|store| {
             let mut guard = store.write().unwrap();
             if let Some(v) = guard.get_mut(key) {
-                if v.is_expired() { return false; }
+                if v.is_expired() {
+                    return false;
+                }
                 v.expire_at = Some(timestamp * 1000);
                 true
-            } else { false }
+            } else {
+                false
+            }
         })
     }
 
     pub fn ttl(&self, key: &str) -> i64 {
-        Self::with_storage(|store| {
+        Self::with_db(|store| {
             let guard = store.read().unwrap();
             match guard.get(key) {
                 Some(v) if v.is_expired() => -2,
@@ -101,7 +193,7 @@ impl Storage {
     }
 
     pub fn pttl(&self, key: &str) -> i64 {
-        Self::with_storage(|store| {
+        Self::with_db(|store| {
             let guard = store.read().unwrap();
             match guard.get(key) {
                 Some(v) if v.is_expired() => -2,
@@ -115,22 +207,28 @@ impl Storage {
     }
 
     pub fn persist(&self, key: &str) -> bool {
-        Self::with_storage(|store| {
+        Self::with_db(|store| {
             let mut guard = store.write().unwrap();
             if let Some(v) = guard.get_mut(key) {
-                if v.is_expired() { return false; }
+                if v.is_expired() {
+                    return false;
+                }
                 v.expire_at = None;
                 true
-            } else { false }
+            } else {
+                false
+            }
         })
     }
 
     // ─── Key listing ────────────────────────────────────────────────────────
 
     pub fn keys(&self, pattern: &str) -> Vec<String> {
-        Self::with_storage(|store| {
-            let guard = store.read().unwrap();
-            guard.iter()
+        Self::with_db(|store| {
+            store
+                .read()
+                .unwrap()
+                .iter()
                 .filter(|(_, v)| !v.is_expired())
                 .map(|(k, _)| k.clone())
                 .filter(|k| glob_match(pattern, k))
@@ -139,9 +237,11 @@ impl Storage {
     }
 
     pub fn all_keys(&self) -> Vec<String> {
-        Self::with_storage(|store| {
-            let guard = store.read().unwrap();
-            guard.iter()
+        Self::with_db(|store| {
+            store
+                .read()
+                .unwrap()
+                .iter()
                 .filter(|(_, v)| !v.is_expired())
                 .map(|(k, _)| k.clone())
                 .collect()
@@ -149,15 +249,18 @@ impl Storage {
     }
 
     pub fn dbsize(&self) -> usize {
-        Self::with_storage(|store| {
-            store.read().unwrap().iter()
+        Self::with_db(|store| {
+            store
+                .read()
+                .unwrap()
+                .iter()
                 .filter(|(_, v)| !v.is_expired())
                 .count()
         })
     }
 
     pub fn flushdb(&self) {
-        Self::with_storage(|store| {
+        Self::with_db(|store| {
             let mut guard = store.write().unwrap();
             guard.retain(|_, v| !v.is_expired());
         });
@@ -166,21 +269,25 @@ impl Storage {
     // ─── String ──────────────────────────────────────────────────────────────
 
     pub fn set(&self, key: &str, value: String) {
-        Self::with_storage(|store| {
-            let mut guard = store.write().unwrap();
-            guard.insert(key.to_string(), StoredValue::new(RedisData::String(value)));
+        Self::with_db(|store| {
+            store
+                .write()
+                .unwrap()
+                .insert(key.to_string(), StoredValue::new(RedisData::String(value)));
         });
     }
 
     pub fn set_with_ttl(&self, key: &str, value: String, ttl_secs: i64) {
-        Self::with_storage(|store| {
-            let mut guard = store.write().unwrap();
-            guard.insert(key.to_string(), StoredValue::with_ttl(RedisData::String(value), ttl_secs));
+        Self::with_db(|store| {
+            store.write().unwrap().insert(
+                key.to_string(),
+                StoredValue::with_ttl(RedisData::String(value), ttl_secs),
+            );
         });
     }
 
     pub fn set_nx(&self, key: &str, value: String) -> bool {
-        Self::with_storage(|store| {
+        Self::with_db(|store| {
             let mut guard = store.write().unwrap();
             let exists = guard.get(key).map(|v| !v.is_expired()).unwrap_or(false);
             if !exists {
@@ -194,7 +301,10 @@ impl Storage {
 }
 
 pub fn current_time_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
 }
 
 /// Glob pattern matcher using backtracking.
@@ -219,7 +329,8 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
                 j += 1;
             } else if star_i >= 0 {
                 // Backtrack: star consumes one more name char
-                j += 1;
+                star_j += 1;
+                j = star_j;
                 i = star_i as usize;
             } else {
                 return false;
@@ -231,7 +342,13 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
                 j += 1;
                 i = star_i as usize;
             } else {
-                i = star_i as usize;
+                // Name exhausted — remaining pattern must be all stars
+                for &pc in &pb[i..] {
+                    if pc != b'*' {
+                        return false;
+                    }
+                }
+                return true;
             }
         } else {
             return i == pb.len() && j == nb.len();
@@ -252,5 +369,8 @@ mod tests {
         assert!(glob_match("foo*bar", "foobar"));
         assert!(glob_match("foo?bar", "fooXbar"));
         assert!(!glob_match("foo?bar", "fooXXbar"));
+        assert!(glob_match("a*b*c", "axbxc"));
+        assert!(glob_match("*:*", "u:1"));
+        assert!(!glob_match("*:*", "user"));
     }
 }

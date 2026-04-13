@@ -108,5 +108,5 @@ fn estimate_hll_count(data: &str) -> i64 {
     let leading_zeros = hash.leading_zeros() as i64;
     let estimate = 1i64 << leading_zeros.min(12);
     
-    estimate.max(1).min(1000000)
+    estimate.clamp(1, 1000000)
 }
