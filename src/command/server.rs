@@ -195,11 +195,3 @@ pub fn flushall(_args: &[Value]) -> CommandResult {
     Ok(Value::SimpleString("OK".to_string()))
 }
 
-/// CLIENT subcommand dispatcher.
-pub fn client(_args: &[Value]) -> CommandResult {
-    if _args.is_empty() {
-        return Err(CommandError::WrongNumberOfArgs("CLIENT".into()));
-    }
-    // Just echo OK for now as client tracking is not implemented
-    Ok(Value::SimpleString("OK".to_string()))
-}
