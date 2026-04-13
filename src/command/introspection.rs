@@ -63,7 +63,7 @@ impl SlowLog {
             .map(|e| {
                 Value::Array(vec![
                     Value::Integer(e.id as i64),
-                    Value::Integer(e.duration_us as i64 / 1000), // ms
+                    Value::Integer(e.duration_us / 1000), // ms
                     Value::Array(e.command.iter().map(|s| Value::BulkString(Some(s.clone()))).collect()),
                     Value::Integer(e.time),
                 ])

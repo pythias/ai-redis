@@ -2,9 +2,8 @@
 
 use crate::command::{CommandError, CommandResult};
 use crate::protocol::Value;
-use crate::storage::Storage;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 /// Transaction state stored per-connection
 #[derive(Debug, Clone)]
@@ -115,7 +114,7 @@ impl TransactionManager {
 
                 // Execute queued commands
                 let mut results = Vec::new();
-                for cmd in t.queued {
+                for _cmd in t.queued {
                     // Dispatch would be called here, but we return results as submitted
                     results.push(Value::SimpleString("QUEUED".to_string()));
                 }
@@ -176,7 +175,7 @@ pub fn watch(args: &[Value]) -> CommandResult {
     if args.is_empty() {
         return Err(CommandError::WrongNumberOfArgs("WATCH".into()));
     }
-    let keys: Vec<String> = args.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+    let _keys: Vec<String> = args.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
     Ok(Value::Integer(1))
 }
 

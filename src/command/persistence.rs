@@ -9,7 +9,7 @@ use std::{fs, thread};
 
 use crate::command::{CommandError, CommandResult};
 use crate::protocol::Value;
-use crate::storage::{current_time_ms, memory::DATABASES};
+use crate::storage::memory::DATABASES;
 
 /// Tracks background save state.
 static BG_SAVE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);

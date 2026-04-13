@@ -1,9 +1,7 @@
 //! Server commands: SHUTDOWN, ROLE, INFO, TIME, MIGRATE, FLUSHALL, CLIENT
 
 use std::io::Write as IoWrite;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::command::{CommandError, CommandResult};

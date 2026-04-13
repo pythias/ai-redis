@@ -2,9 +2,8 @@
 
 use crate::command::{CommandError, CommandResult};
 use crate::protocol::Value;
-use crate::storage::data::{RedisData, StreamEntry, StoredValue};
+use crate::storage::data::RedisData;
 use crate::storage::Storage;
-use std::collections::HashMap;
 
 /// XCLAIM - Claim ownership of a message
 pub fn xclaim(args: &[Value]) -> CommandResult {
@@ -14,7 +13,7 @@ pub fn xclaim(args: &[Value]) -> CommandResult {
     let key = args[0].as_str().ok_or(CommandError::WrongType)?;
     let _group = args[1].as_str().ok_or(CommandError::WrongType)?;
     let _consumer = args[2].as_str().ok_or(CommandError::WrongType)?;
-    let min_idle_time: i64 = args[3].as_int()
+    let _min_idle_time: i64 = args[3].as_int()
         .or_else(|| args[3].as_str().and_then(|s| s.parse().ok()))
         .ok_or(CommandError::InvalidInt)?;
     let ids: Vec<&str> = args[4..].iter().filter_map(|v| v.as_str()).collect();

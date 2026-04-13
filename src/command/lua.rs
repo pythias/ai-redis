@@ -5,21 +5,21 @@ use crate::command::{CommandError, CommandResult};
 use crate::protocol::Value;
 
 /// EVAL script numkeys [key ...] [arg ...]
-pub fn eval(args: &[Value]) -> CommandResult {
+pub fn eval(_args: &[Value]) -> CommandResult {
     Err(CommandError::NotImplemented("EVAL".into()))
 }
 
 /// EVALSHA sha1 numkeys [key ...] [arg ...]
-pub fn evalsha(args: &[Value]) -> CommandResult {
+pub fn evalsha(_args: &[Value]) -> CommandResult {
     Err(CommandError::NotImplemented("EVALSHA".into()))
 }
 
 /// FCALL function_name numkeys [key ...] [arg ...]
-pub fn fcall(args: &[Value]) -> CommandResult {
+pub fn fcall(_args: &[Value]) -> CommandResult {
     Err(CommandError::NotImplemented("FCALL".into()))
 }
 
 /// SCRIPT LOAD script
-pub fn script_load(args: &[Value]) -> CommandResult {
+pub fn script_load(_args: &[Value]) -> CommandResult {
     Err(CommandError::NotImplemented("SCRIPT".into()))
 }

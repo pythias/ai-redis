@@ -2,11 +2,9 @@
 
 use std::collections::HashMap;
 use std::sync::RwLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::command::{CommandError, CommandResult};
 use crate::protocol::Value;
-use crate::storage::memory::DATABASES;
 
 /// Runtime configuration parameters.
 static CONFIG: RwLock<Option<HashMap<String, String>>> = RwLock::new(None);
@@ -164,8 +162,8 @@ fn glob_match(pattern: &str, name: &str) -> bool {
     if pattern == "*" {
         return true;
     }
-    let mut pat = pattern.as_bytes();
-    let mut name = name.as_bytes();
+    let pat = pattern.as_bytes();
+    let name = name.as_bytes();
     let mut i = 0;
     let mut j = 0;
     while i < pat.len() && j < name.len() {
