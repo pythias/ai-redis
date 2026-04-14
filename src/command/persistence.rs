@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Persistence commands: SAVE, BGSAVE, LASTSAVE, BGREWRITEAOF, SHUTDOWN
 
 use std::io::Write as IoWrite;

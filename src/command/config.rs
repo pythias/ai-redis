@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! CONFIG commands: GET, SET, REWRITE, RESETSTAT
 
 use std::collections::HashMap;

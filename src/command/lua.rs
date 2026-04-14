@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Lua scripting commands stub (EVAL, EVALSHA, FCALL, SCRIPT)
 //! This is a placeholder - full Lua support requires the mlua crate
 

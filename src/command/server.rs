@@ -1,6 +1,5 @@
 //! Server commands: SHUTDOWN, ROLE, INFO, TIME, MIGRATE, FLUSHALL, CLIENT
 
-use std::io::Write as IoWrite;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -61,8 +60,9 @@ pub fn info(args: &[Value]) -> CommandResult {
 
     // Count total keys across all databases
     let mut total_keys = 0u64;
-    for db_idx in 0..16 {
-        if let Some(arc) = DATABASES[db_idx].get() {
+    #[allow(clippy::type_complexity)]
+    for _db_idx in 0..16 {
+        if let Some(arc) = DATABASES[_db_idx].get() {
             if let Ok(guard) = arc.read() {
                 total_keys += guard.iter().filter(|(_, v)| !v.is_expired()).count() as u64;
             }
@@ -158,8 +158,8 @@ pub fn migrate(args: &[Value]) -> CommandResult {
     let mut copy = false;
     let mut replace = false;
     let mut del = false;
-    for i in 4..args.len() {
-        match args[i].as_str() {
+    for arg in args.iter().skip(4) {
+        match arg.as_str() {
             Some("COPY") => copy = true,
             Some("REPLACE") => replace = true,
             Some("DEL") => del = true,
@@ -185,8 +185,9 @@ pub fn migrate(args: &[Value]) -> CommandResult {
 /// FLUSHALL
 /// Removes all keys from all databases.
 pub fn flushall(_args: &[Value]) -> CommandResult {
-    for db_idx in 0..16 {
-        if let Some(arc) = DATABASES[db_idx].get() {
+    #[allow(clippy::type_complexity)]
+    for _db_idx in 0..16 {
+        if let Some(arc) = DATABASES[_db_idx].get() {
             if let Ok(mut guard) = arc.write() {
                 guard.clear();
             }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Transaction commands: MULTI, EXEC, DISCARD, WATCH, UNWATCH
 
 use crate::command::{CommandError, CommandResult};

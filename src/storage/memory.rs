@@ -9,7 +9,6 @@ use super::data::{RedisData, StoredValue};
 /// Number of Redis databases (0–15).
 const NUM_DATABASES: usize = 16;
 
-/// Thread-local selected database index (0–15). Defaults to 0.
 thread_local! {
     static SELECTED_DB: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -50,8 +49,8 @@ impl Storage {
     /// Initialize the global storage.
     pub fn init() {
         // All DBs are initialized lazily on first access.
-        for db in 0..NUM_DATABASES {
-            DATABASES[db].get_or_init(|| Arc::new(RwLock::new(HashMap::new())));
+        for idx in 0..NUM_DATABASES {
+            DATABASES[idx].get_or_init(|| Arc::new(RwLock::new(HashMap::new())));
         }
     }
 

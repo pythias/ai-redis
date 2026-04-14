@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Introspection commands: SLOWLOG, OBJECT, DEBUG, COMMAND, CLIENT
 
 use crate::command::{CommandError, CommandResult};
