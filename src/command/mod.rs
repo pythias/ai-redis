@@ -19,6 +19,7 @@ pub mod lua;
 pub mod transaction;
 pub mod introspection;
 pub mod stream_geo;
+pub mod pubsub;
 
 use crate::protocol::Value;
 

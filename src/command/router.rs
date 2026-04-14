@@ -224,7 +224,11 @@ impl Router {
         self.register("GEORADIUSBYMEMBER", super::stream_geo::georadiusbymember);
         self.register("GEOHASH", super::stream_geo::geohash);
 
-        // TODO: Pub/Sub, Lua, etc.
+        // Pub/Sub (Phase 6)
+        self.register("PUBLISH", super::pubsub::publish);
+        self.register("PUBSUB", super::pubsub::pubsub);
+        // Note: SUBSCRIBE/UNSUBSCRIBE/PSUBSCRIBE/PUNSUBSCRIBE are handled
+        // in the connection handler since they change connection mode.
     }
 }
 
